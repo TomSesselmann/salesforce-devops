@@ -1,0 +1,56 @@
+name: "Deployment - Create release branch"
+
+trigger: none
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 0
+    persistCredentials: true
+  - script: |
+      set -e
+
+      # Read variables
+      echo "Target org: $TARGET_ORG"
+      INCLUDED_STORIES=${INCLUDED_STORIES// /}
+      echo "Included stories: $INCLUDED_STORIES"
+
+      # Get the target branch
+      case $TARGET_ORG in
+      TST) TARGET_BRANCH=tst ;;
+      QAS) TARGET_BRANCH=qas ;;
+      *) echo "ERROR: Target org should be either 'TST' or 'QAS'"; exit 1 ;;
+      esac
+
+      # Fetch related branches
+      git fetch origin develop
+      git fetch origin $TARGET_BRANCH
+      git checkout $TARGET_BRANCH
+      git pull origin $TARGET_BRANCH
+      git checkout develop
+      git pull origin develop
+
+      # Get all commits related to the stories
+      echo $(git log -5)
+      GIT_LOG=$(git log --grep="${INCLUDED_STORIES//,/\\|}" --pretty=format:"%H" --reverse)
+      echo -e "Git Log: \n$GIT_LOG"
+      if [ -z "$GIT_LOG" ]; then echo "ERROR: No commits found in develop for $INCLUDED_STORIES"; exit 1; fi
+
+      # Filter out commits that have already been deployed
+      GIT_CHERRY=$(echo $GIT_LOG | head -1 | git cherry $TARGET_BRANCH HEAD | grep ^+ | sed "s/+ //")
+      echo -e "Git Cherry: \n$GIT_CHERRY"
+      TO_PICK=$(echo "$GIT_LOG" | grep "$GIT_CHERRY" | tr '\n' ' ')
+      echo -e "To Pick: \n$TO_PICK"
+
+      # Create the release branch
+      RELEASE_BRANCH="release/${INCLUDED_STORIES//,/-}-$TARGET_ORG"
+      git checkout $TARGET_BRANCH
+      git checkout -b $RELEASE_BRANCH
+      git config --global user.email "$BUILD_REQUESTEDFOREMAIL"
+      git config --global user.name "$BUILD_REQUESTEDFOR"
+      git cherry-pick $TO_PICK
+      git push --force --set-upstream origin $RELEASE_BRANCH
+    displayName: "Create the release branch"

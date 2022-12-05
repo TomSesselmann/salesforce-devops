@@ -1,0 +1,66 @@
+name: "Validation"
+
+# Triggered by Azure DevOps Build Validation policies
+trigger: none
+
+# Custom variables
+variables:
+  - group: AUTH
+
+# Stages to run as part of validation
+stages:
+  # Validate source code changes
+  - stage: ValidateSource
+    displayName: "Validate PR"
+    dependsOn: []
+    jobs:
+      - job: ValidateSource
+        displayName: "Validate PR"
+        # Run build on the mentioned image
+        pool:
+          vmImage: "ubuntu-latest"
+
+        # The docker container contains sgd and the dependencies it needs to run
+        container: awareservices/sfdx-cicd:latest
+        steps:
+          - checkout: self
+            persistCredentials: true
+            displayName: "Checkout Source"
+
+          # Authenticate Org
+          - script: |
+              set -e
+              if [ $(System.PullRequest.TargetBranch) = 'refs/heads/develop' ]; then
+                echo $(DEV_AUTH_URL) > ./authURL
+              elif [ $(System.PullRequest.TargetBranch) = 'refs/heads/tst' ]; then
+                echo $(TST_AUTH_URL) > ./authURL
+              elif [ $(System.PullRequest.TargetBranch) = 'refs/heads/qas' ]; then
+                echo $(QAS_AUTH_URL) > ./authURL
+              elif [ $(System.PullRequest.TargetBranch) = 'refs/heads/dryrun' ]; then
+                echo $(DRYRUN_AUTH_URL) > ./authURL
+              elif [ $(System.PullRequest.TargetBranch) = 'refs/heads/master' ]; then
+                echo $(PROD_AUTH_URL) > ./authURL
+              fi
+              sfdx auth:sfdxurl:store -f authURL -s
+              rm ./authURL
+            displayName: "Authenticate Org"
+
+          # Generate Delta Changes
+          - script: |
+              set -e
+              export HOME=/root
+              sfdx sgd:source:delta --to "HEAD" --from "HEAD^" --output "deploy/" --source force-app/main/default --ignore .forceignore
+              echo "--- package.xml generated with added and modified metadata ---"
+              cat deploy/package/package.xml
+              echo "--- destructiveChanges.xml generated with deleted metadata ---"
+              cat deploy/destructiveChanges/destructiveChanges.xml
+            displayName: "Generate Delta Changes"
+
+          # Validate Source
+          - script: |
+              set -e
+              if grep -q '<types>' deploy/package/package.xml; then
+                echo "--- Validating added, modified and deleted metadata ---"
+                sfdx force:source:deploy -x deploy/package/package.xml --postdestructivechanges deploy/destructiveChanges/destructiveChanges.xml -l RunLocalTests -c --ignorewarnings
+              fi
+            displayName: "Validate Deployment"

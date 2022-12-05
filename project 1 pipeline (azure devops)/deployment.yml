@@ -1,0 +1,78 @@
+name: "Deployment"
+
+# Build pushes so we can release merged changes
+trigger:
+  branches:
+    include:
+      - develop
+      - tst
+      - qas
+      - dryrun
+      - master
+  paths:
+    include:
+      - "force-app/main/default/*"
+
+# Custom variables
+variables:
+  - group: AUTH
+
+# Stages to run as part of deployment
+stages:
+  # Deploy source code changes
+  - stage: DeploySource
+    displayName: "Deploy Source"
+    dependsOn: []
+    jobs:
+      - job: DeploySource
+        displayName: "Deploy Source"
+        # Run build on the mentioned image
+        pool:
+          vmImage: "ubuntu-latest"
+
+        # The docker container contains sgd and the dependencies it needs to run
+        container: awareservices/sfdx-cicd:latest
+        steps:
+          - checkout: self
+            persistCredentials: true
+            displayName: "Checkout Source"
+
+          # Authenticate Org
+          - script: |
+              set -e
+              if [ $(Build.SourceBranch) = 'refs/heads/develop' ]; then
+                echo $(DEV_AUTH_URL) > ./authURL
+              elif [ $(Build.SourceBranch) = 'refs/heads/tst' ]; then
+                echo $(TST_AUTH_URL) > ./authURL
+              elif [ $(Build.SourceBranch) = 'refs/heads/qas' ]; then
+                echo $(QAS_AUTH_URL) > ./authURL
+              elif [ $(Build.SourceBranch) = 'refs/heads/dryrun' ]; then
+                echo $(DRYRUN_AUTH_URL) > ./authURL
+              elif [ $(Build.SourceBranch) = 'refs/heads/master' ]; then
+                echo $(PROD_AUTH_URL) > ./authURL
+              fi
+              sfdx auth:sfdxurl:store -f authURL -s
+              rm ./authURL
+            displayName: "Authenticate Org"
+
+          # Generate Delta Changes
+          - script: |
+              set -e
+              export HOME=/root
+              sfdx sgd:source:delta --to "HEAD" --from "HEAD^" --output "deploy/" --source force-app/main/default --ignore .forceignore
+              echo "--- package.xml generated with added and modified metadata ---"
+              cat deploy/package/package.xml
+              echo "--- destructiveChanges.xml generated with deleted metadata ---"
+              cat deploy/destructiveChanges/destructiveChanges.xml
+            displayName: "Generate Delta Changes"
+
+          # Validate Source
+          - script: |
+              set -e
+              if grep -q '<types>' deploy/package/package.xml; then
+                echo "--- Deploying added, modified and deleted metadata ---"
+                sfdx force:source:deploy -x deploy/package/package.xml --postdestructivechanges deploy/destructiveChanges/destructiveChanges.xml -l RunLocalTests --ignorewarnings
+              fi
+            displayName: "Deploy Source"
+          - publish: $(Pipeline.Workspace)
+            artifact: DeploymentArtifact

@@ -1,0 +1,25 @@
+name: DEV1 Deployment
+on:
+  push:
+    branches: [dev1]
+    paths:
+      - 'force-app/main/default/**'
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    container:
+      image: awareservices/sfdx-cli:latest
+    steps:
+      - name: Checkout Local Repo
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: SFDX Login
+        run: echo ${{ secrets.AUTH_DEV1 }} > authFile && sfdx auth:sfdxurl:store -f authFile --setdefaultusername
+      - run: rm authFile
+      - name: SFDX Generate Delta Package
+        run: export HOME=/root && sfdx sgd:source:delta --to "HEAD" --from "HEAD^" --output "." --source force-app/main/default --ignore .forceignore
+      - run: cat package/package.xml
+      - name: SFDX Run Deployment on added and modified metadata
+        run: if grep -q '<types>' package/package.xml; then sfdx force:source:deploy -x package/package.xml --postdestructivechanges destructiveChanges/destructiveChanges.xml; fi
