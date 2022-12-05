@@ -1,12 +1,12 @@
 # Salesforce DevOps Examples
 
-## Dockerfile
+## [Dockerfile](/Dockerfile)
 
 The dockerfile essentially just installs the [Salesforce CLI](https://developer.salesforce.com/tools/sfdxcli) and then installs the [SFDX-Git-Delta Plugin](https://github.com/scolladon/sfdx-git-delta)
 
 ## Project 1 (Azure Devops Pipelines)
 
-### Validation
+### [Validation](/project-1/validation.yml)
 
 The validation pipeline is set up to run when a Pull Request is created. It uses the docker container created by the above dockerfile. It then runs the following commands:
 
@@ -14,11 +14,11 @@ The validation pipeline is set up to run when a Pull Request is created. It uses
   * `sfdx sgd:source:delta` - This generates a delta package of the changes in the pull request.
   * `sfdx force:source:deploy` - This validates the delta package against the org.
 
-### Deployment
+### [Deployment](/project-1/deployment.yml)
 
 Same as Validation, but it deploys the delta package to the org.
 
-### Create Release Branch
+### [Create Release Branch](/project-1/create-release-branch.yml)
 
 This is a script that helps deploy stories to further testing environments. It essentially does this by creating a new release branch and cherry-picking commits that are related to those stories which don't exist yet in the release branch. The process is more or less as follows:
 
@@ -35,7 +35,7 @@ This is a script that helps deploy stories to further testing environments. It e
 
 Validation and Deployment are more or less the same as Project 1.
 
-### Create Feature Branch
+### [Create Feature Branch](/project-2/create-feature-branch.yml)
 
 This is a script that pulls metadata from an org and creates a feature branch. It is particularly useful for functional consultants, who may not be familiar with git commands. The process is more or less as follows:
 
